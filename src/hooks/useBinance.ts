@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  fetchDepth,
-  fetchTicker,
-  fetchAllTickers,
+  fetchDepthProxy as fetchDepth,
+  fetchTickerProxy as fetchTicker,
+  fetchAllTickersProxy as fetchAllTickers,
   type OrderBook,
   type Ticker,
 } from "@/lib/binance";
 import { useSession } from "@/lib/session-store";
 
 // ─── live depth via REST polling (1s) ────────────────────────────────────
-// REST polling via a server-function proxy (works in dev and on Vercel alike).
 export function useLiveDepth(symbol: string) {
   const [book, setBook] = useState<OrderBook | null>(null);
   const [connected, setConnected] = useState(false);
@@ -36,7 +35,6 @@ export function useLiveDepth(symbol: string) {
       const now = Date.now();
       msgTimestampsRef.current.push(now);
       totalMsgsRef.current += 1;
-      // keep only last 5s
       msgTimestampsRef.current = msgTimestampsRef.current.filter(
         (t) => now - t < 5000
       );
@@ -107,9 +105,7 @@ export function useLiveTicker(symbol: string) {
       }
       lastPrice.current = t.last;
       setTicker(t);
-    } catch {
-      // silent — keep last known ticker
-    }
+    } catch {}
     if (aliveRef.current) {
       timerRef.current = setTimeout(poll, 2000);
     }
@@ -144,13 +140,10 @@ export function useLiveTickers(symbols: readonly string[]) {
       const next: Record<string, Ticker> = {};
       for (const t of tickers) next[t.symbol] = t;
       setMap(next);
-    } catch {
-      // keep last known
-    }
+    } catch {}
     if (aliveRef.current) {
       timerRef.current = setTimeout(poll, 5000);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbolsKey]);
 
   useEffect(() => {
