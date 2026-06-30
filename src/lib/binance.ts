@@ -30,6 +30,8 @@ export const SYMBOLS = [
   "LTCUSDT",
   "BCHUSDT",
   "AAVEUSDT",
+  "ETCUSDT",
+  "SLXUSDT",
 ] as const;
 
 export type Symbol = (typeof SYMBOLS)[number];
@@ -41,6 +43,7 @@ export const TIMEFRAMES = [
   { label: "1س", value: "1h" },
   { label: "4س", value: "4h" },
   { label: "يومي", value: "1d" },
+  { label: "أسبوعي", value: "1w" },
 ] as const;
 
 export type Interval = (typeof TIMEFRAMES)[number]["value"];
