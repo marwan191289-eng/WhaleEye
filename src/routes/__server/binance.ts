@@ -1,3 +1,3 @@
-import { binanceProxy } from "../lib/binance";
+import { binanceProxy } from "../../lib/binance";
 
 export const GET = binanceProxy;
