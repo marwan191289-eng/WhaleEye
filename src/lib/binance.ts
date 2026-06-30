@@ -1,11 +1,4 @@
-// Binance public market data — no API key needed.
-// REST calls go through a TanStack Start server function (binanceProxy) so the
-// actual request to api.binance.com happens server-side, on the Vercel function.
-// Binance's REST API does NOT send Access-Control-Allow-Origin, so a direct
-// browser fetch is blocked by CORS in production — this proxy avoids that
-// entirely (server-to-server requests aren't subject to CORS) and works
-// identically in local dev and on Vercel, no environment branching needed.
-
+// src/lib/binance.ts
 import { createServerFn } from "@tanstack/react-start";
 
 const BINANCE_BASE = "https://api.binance.com";
@@ -20,6 +13,7 @@ export const binanceProxy = createServerFn({ method: "GET" })
     return r.json();
   });
 
+// ── Symbols (added ETCUSDT, SLXUSDT) ───────────────────────────────────────
 export const SYMBOLS = [
   "BTCUSDT",
   "ETHUSDT",
@@ -30,10 +24,13 @@ export const SYMBOLS = [
   "LTCUSDT",
   "BCHUSDT",
   "AAVEUSDT",
+  "ETCUSDT",   // added
+  "SLXUSDT",   // added
 ] as const;
 
 export type Symbol = (typeof SYMBOLS)[number];
 
+// ── Timeframes (added weekly 1w) ─────────────────────────────────────────
 export const TIMEFRAMES = [
   { label: "1د", value: "1m" },
   { label: "5د", value: "5m" },
@@ -41,10 +38,12 @@ export const TIMEFRAMES = [
   { label: "1س", value: "1h" },
   { label: "4س", value: "4h" },
   { label: "يومي", value: "1d" },
+  { label: "أسبوعي", value: "1w" }, // added weekly
 ] as const;
 
 export type Interval = (typeof TIMEFRAMES)[number]["value"];
 
+// ── Types ────────────────────────────────────────────────────────────────
 export interface DepthLevel {
   price: number;
   qty: number;
@@ -83,9 +82,7 @@ async function binanceGet(path: string): Promise<any> {
 }
 
 export function wsUrl(stream: string) {
-  // Binance's public WS market stream accepts direct browser connections from
-  // any origin (this is its documented intended usage), so unlike REST it
-  // does not need a server-side proxy.
+  // Note: kept original behavior for direct WS usage if needed.
   return `wss://stream.binance.com:9443/ws/${stream}`;
 }
 
@@ -145,6 +142,69 @@ export async function fetchKlines(
     closeTime: k[6],
   }));
 }
+
+// ── New: symbol / search helpers ──────────────────────────────────────────
+
+/**
+ * Fetch exchangeInfo for a single symbol.
+ * Returns the raw exchangeInfo.symbol object or throws if not found.
+ */
+export async function fetchSymbolInfo(symbol: string): Promise<any> {
+  const j = await binanceGet(`/api/v3/exchangeInfo?symbol=${symbol}`);
+  // Binance returns { symbols: [...] } even for single symbol; normalize:
+  if (j && Array.isArray(j.symbols) && j.symbols.length > 0) return j.symbols[0];
+  if (j && j.symbol) return j; // fallback
+  throw new Error("symbol not found");
+}
+
+/**
+ * Check whether a symbol exists on Binance (fast boolean).
+ */
+export async function symbolExists(symbol: string): Promise<boolean> {
+  try {
+    await fetchSymbolInfo(symbol);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Search symbols by substring (case-insensitive).
+ * Useful for "search any coin on Binance".
+ * Returns an array of matching symbol strings (e.g., ["ETHUSDT", "ETHBUSD", ...]).
+ */
+export async function searchSymbols(query: string): Promise<string[]> {
+  // fetch full exchangeInfo once and filter locally
+  const j = await binanceGet(`/api/v3/exchangeInfo`);
+  const all = (j.symbols as any[]) || [];
+  const q = query.trim().toUpperCase();
+  if (!q) return [];
+  return all
+    .map((s) => s.symbol as string)
+    .filter((sym) => sym.includes(q));
+}
+
+/**
+ * Fetch combined details for a symbol: exchangeInfo, ticker, and shallow depth.
+ * Useful to "check its status and position when it appears".
+ */
+export async function fetchSymbolDetails(symbol: string) {
+  const [info, ticker, depth] = await Promise.all([
+    fetchSymbolInfo(symbol),
+    fetchTicker(symbol),
+    fetchDepth(symbol, 20),
+  ]);
+  // position in our default SYMBOLS list (if present)
+  const index = SYMBOLS.indexOf(symbol as Symbol);
+  return { info, ticker, depth, inDefaultList: index >= 0, defaultListIndex: index >= 0 ? index : -1 };
+}
+
+// ── Proxy aliases (for compatibility with useBinance.ts changes) ──────────
+export const fetchDepthProxy = fetchDepth;
+export const fetchTickerProxy = fetchTicker;
+export const fetchAllTickersProxy = fetchAllTickers;
+export const fetchKlinesProxy = fetchKlines;
 
 // ── Formatters ─────────────────────────────────────────────────────────────
 export function fmtPrice(n: number, decimals?: number): string {
