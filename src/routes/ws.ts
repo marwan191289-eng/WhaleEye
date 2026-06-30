@@ -1,26 +1,35 @@
-import { createServerFn } from "@tanstack/react-start";
+import { defineEventHandler, getQuery } from "h3";
+import WebSocket from "ws";
 
-export const wsProxy = createServerFn({ method: "GET" })
-  .validator((d: { stream: string }) => d)
-  .handler(async ({ data }) => {
-    const stream = data.stream;
+export default defineEventHandler((event) => {
+  const { stream } = getQuery(event);
 
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
+  if (!stream) {
+    event.node.res.statusCode = 400;
+    return "Missing stream";
+  }
 
-    return new Response(
-      new ReadableStream({
-        start(controller) {
-          ws.onmessage = (msg) => controller.enqueue(msg.data);
-          ws.onerror = () => controller.close();
-          ws.onclose = () => controller.close();
-        },
-      }),
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        },
-      }
-    );
+  const binanceWS = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
+
+  const { req, res } = event.node;
+
+  if (req.headers.upgrade !== "websocket") {
+    res.statusCode = 426;
+    return "Expected WebSocket";
+  }
+
+  const serverWS = new WebSocket.Server({ noServer: true });
+
+  event.node.req.socket.server.on("upgrade", (request, socket, head) => {
+    serverWS.handleUpgrade(request, socket, head, (clientWS) => {
+      binanceWS.on("message", (msg) => clientWS.send(msg));
+      binanceWS.on("close", () => clientWS.close());
+      binanceWS.on("error", () => clientWS.close());
+
+      clientWS.on("message", (msg) => binanceWS.send(msg));
+      clientWS.on("close", () => binanceWS.close());
+    });
   });
+
+  return null;
+});
