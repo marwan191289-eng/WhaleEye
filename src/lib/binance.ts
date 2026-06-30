@@ -1,6 +1,24 @@
 // Binance public market data — no API key needed.
-// REST proxied via /binance-rest  →  https://api.binance.com
-// WS  proxied via /binance-ws    →  wss://stream.binance.com
+// REST calls go through a TanStack Start server function (binanceProxy) so the
+// actual request to api.binance.com happens server-side, on the Vercel function.
+// Binance's REST API does NOT send Access-Control-Allow-Origin, so a direct
+// browser fetch is blocked by CORS in production — this proxy avoids that
+// entirely (server-to-server requests aren't subject to CORS) and works
+// identically in local dev and on Vercel, no environment branching needed.
+
+import { createServerFn } from "@tanstack/react-start";
+
+const BINANCE_BASE = "https://api.binance.com";
+
+export const binanceProxy = createServerFn({ method: "GET" })
+  .validator((d: { path: string }) => d)
+  .handler(async ({ data }) => {
+    const r = await fetch(`${BINANCE_BASE}${data.path}`);
+    if (!r.ok) {
+      throw new Error(`binance ${r.status}`);
+    }
+    return r.json();
+  });
 
 export const SYMBOLS = [
   "BTCUSDT",
@@ -60,20 +78,19 @@ export interface Kline {
 }
 
 // ── REST helpers ───────────────────────────────────────────────────────────
-// Use local proxy path so the request stays same-origin (avoids CORS / WS blocks).
-function restUrl(path: string) {
-  return `/binance-rest${path}`;
+async function binanceGet(path: string): Promise<any> {
+  return binanceProxy({ data: { path } });
 }
 
 export function wsUrl(stream: string) {
-  // Use relative proxy so WS goes through Vite → Binance
-  return `/binance-ws/ws/${stream}`;
+  // Binance's public WS market stream accepts direct browser connections from
+  // any origin (this is its documented intended usage), so unlike REST it
+  // does not need a server-side proxy.
+  return `wss://stream.binance.com:9443/ws/${stream}`;
 }
 
 export async function fetchDepth(symbol: string, limit = 500): Promise<OrderBook> {
-  const r = await fetch(restUrl(`/api/v3/depth?symbol=${symbol}&limit=${limit}`));
-  if (!r.ok) throw new Error(`depth ${r.status}`);
-  const j = await r.json();
+  const j = await binanceGet(`/api/v3/depth?symbol=${symbol}&limit=${limit}`);
   return {
     lastUpdateId: j.lastUpdateId,
     bids: (j.bids as [string, string][]).map(([p, q]) => ({ price: +p, qty: +q })),
@@ -82,9 +99,7 @@ export async function fetchDepth(symbol: string, limit = 500): Promise<OrderBook
 }
 
 export async function fetchTicker(symbol: string): Promise<Ticker> {
-  const r = await fetch(restUrl(`/api/v3/ticker/24hr?symbol=${symbol}`));
-  if (!r.ok) throw new Error(`ticker ${r.status}`);
-  const j = await r.json();
+  const j = await binanceGet(`/api/v3/ticker/24hr?symbol=${symbol}`);
   return {
     symbol: j.symbol,
     last: +j.lastPrice,
@@ -99,9 +114,7 @@ export async function fetchTicker(symbol: string): Promise<Ticker> {
 
 export async function fetchAllTickers(symbols: readonly string[]): Promise<Ticker[]> {
   const param = encodeURIComponent(JSON.stringify(symbols));
-  const r = await fetch(restUrl(`/api/v3/ticker/24hr?symbols=${param}`));
-  if (!r.ok) throw new Error(`tickers ${r.status}`);
-  const arr = (await r.json()) as any[];
+  const arr = (await binanceGet(`/api/v3/ticker/24hr?symbols=${param}`)) as any[];
   return arr.map((j) => ({
     symbol: j.symbol,
     last: +j.lastPrice,
@@ -119,11 +132,9 @@ export async function fetchKlines(
   interval: Interval,
   limit = 200
 ): Promise<Kline[]> {
-  const r = await fetch(
-    restUrl(`/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
-  );
-  if (!r.ok) throw new Error(`klines ${r.status}`);
-  const arr = (await r.json()) as any[][];
+  const arr = (await binanceGet(
+    `/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+  )) as any[][];
   return arr.map((k) => ({
     openTime: k[0],
     open: +k[1],

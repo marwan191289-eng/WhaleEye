@@ -30,19 +30,6 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     proxy: {
-      "/binance-rest": {
-        target: "https://api.binance.com",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/binance-rest/, ""),
-        secure: true,
-      },
-      "/binance-ws": {
-        target: "wss://stream.binance.com",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/binance-ws/, ""),
-        ws: true,
-        secure: true,
-      },
       "/api/rl": {
         target: "http://localhost:3001",
         changeOrigin: true,

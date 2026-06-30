@@ -9,7 +9,7 @@ import {
 import { useSession } from "@/lib/session-store";
 
 // ─── live depth via REST polling (1s) ────────────────────────────────────
-// REST polling via the local /binance-rest proxy keeps the feed stable across hosts.
+// REST polling via a server-function proxy (works in dev and on Vercel alike).
 export function useLiveDepth(symbol: string) {
   const [book, setBook] = useState<OrderBook | null>(null);
   const [connected, setConnected] = useState(false);
