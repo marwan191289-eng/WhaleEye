@@ -1,13 +1,11 @@
 import { binanceProxy } from "../lib/binance";
 
-export const GET = async (event) => {
-  const url = new URL(event.request.url);
-  const path = url.searchParams.get("path");
+export default defineEventHandler(async (event) => {
+  const query = getQuery(event);
 
-  if (!path) {
-    return new Response("Missing path", { status: 400 });
+  if (!query.path) {
+    return { error: "Missing path" };
   }
 
-  const data = await binanceProxy({ data: { path } });
-  return Response.json(data);
-};
+  return await binanceProxy({ data: { path: query.path } });
+});
